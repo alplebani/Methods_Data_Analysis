@@ -1,0 +1,140 @@
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <TFile.h>
+#include <TTree.h>
+#include <TH1D.h>
+#include <TCanvas.h>
+#include <TApplication.h>
+#include <TROOT.h>
+#include <TStyle.h>
+#include <TPad.h>
+#include <TAxis.h>
+#include <TH2F.h>
+#include <TF2.h>
+#include <TLine.h>
+#include "Event.h"
+#include "OutFunc.h"
+#include <TMVA/Reader.h>
+#include "TApplication.h"
+#include "TCanvas.h"
+#include "TLegend.h"
+// #include "TColors.h"
+
+using namespace std;
+
+OutFunc* testStat;      
+
+int main() {
+
+    TApplication app ("app", 0, 0);
+
+    TFile* histFile = new TFile("analysis.root", "RECREATE");  
+    TH1D* hSig = new TH1D ("hSig", "MVA, signal", 100, -5.0, 5.0);
+    TH1D* hBkg = new TH1D ("hBkg", "MVA, background", 100, -5.0, 5.0);
+    TH1D h_Sig ("h_Sig", "MVA signal", 100, -5.0, 5.0);
+    TH1D h_Bkg ("h_Bkg", "MVA background", 100, -5.0, 5.0);
+    TList* hList = new TList();      
+    hList->Add(hSig);
+    hList->Add(hBkg);
+
+    std::string dir    = "../train/dataset/weights/";
+    std::string prefix = "tmvaTest";
+    const double tCut = 0.;
+    std::vector<bool> useVar(3);
+    useVar[0] = true;     
+    useVar[1] = true;     
+    useVar[2] = true;     
+    testStat = new OutFunc("MVA", dir, prefix, tCut, useVar);
+
+    TFile* inputFile = new TFile("../generate/testData.root");
+    inputFile->ls();
+    TTree* sig = dynamic_cast<TTree*>(inputFile->Get("sig"));
+    TTree* bkg = dynamic_cast<TTree*>(inputFile->Get("bkg"));
+    std::vector<TTree*> treeVec;
+    treeVec.push_back(sig);
+    treeVec.push_back(bkg);
+
+    int nSig, nBkg;
+    int nSigAcc = 0;
+    int count_s = 0;
+    int count_b = 0;
+    int numEntries = 0; 
+
+    for (int i=0; i<treeVec.size(); i++){
+
+        treeVec[i]->Print();
+        Event evt;
+        treeVec[i]->SetBranchAddress("evt", &evt);
+        numEntries = treeVec[i]->GetEntries();
+        if ( i == 0 ) { nSig = numEntries; }
+        if ( i == 1 ) { nBkg = numEntries; }
+        std::cout << "number of entries = " << numEntries << std::endl;
+
+        for (int j=0; j<numEntries; j++){
+
+            treeVec[i]->GetEntry(j);                   
+            double t = testStat->val(&evt);            
+            
+            if ( i == 0 ){                       
+                h_Sig.Fill(t);
+                if(t > 0){
+                    count_s++;
+                }
+                if ( t >= tCut ) { nSigAcc++; }
+            }
+            else if ( i == 1 ){ 
+                if (t > 0){
+                    count_b++;
+                }                 
+                h_Bkg.Fill(t);
+            }
+
+
+            // Add your code here to cound number of times that t is greater
+            // or less than a given threshold for each hypothesis; from these
+            // compute below the fraction of events with t >= tCut for each class.
+
+
+
+
+            
+
+        }
+
+    }
+
+    double epsSig = static_cast<double>(nSigAcc)/static_cast<double>(nSig);
+    cout << "nSigAcc, nSig = " << nSigAcc << " , " << nSig << endl;
+    std::cout << "signal efficiency (power) = " << epsSig << std::endl;
+
+    TCanvas sig_bkg = ("S_B", "S_B");
+    sig_bkg.cd();
+    h_Sig.SetLineColor(kBlue);
+    h_Bkg.SetLineColor(kRed);
+    h_Sig.SetXTitle("t");
+    auto legend = new TLegend(0.1,0.7,0.3,0.85);
+    legend->AddEntry(&h_Sig,"Signal","l");
+    legend->AddEntry(&h_Bkg,"Background","l");
+    h_Sig.SetTitle("Fisher discriminant");
+    h_Sig.Draw();
+    h_Bkg.Draw("SAME");
+    legend->Draw("SAME");
+
+    sig_bkg.SaveAs("sig_bkg.pdf");
+
+    cout << "Efficiency of the signal P(t>0|s) = " << 1.*count_s/h_Sig.GetEntries() << endl;
+    cout << "Efficiency of the background P(t>0|b) = " << 1.*count_b/h_Bkg.GetEntries() << endl;
+    cout << "Signal Purity P(s|t>0) = " << 1.*(count_s)/(count_s+count_b) << endl;
+
+    inputFile->Close();
+    histFile->Write();
+    histFile->Close();
+
+    
+
+    app.Run();
+
+    return 0;
+
+}
